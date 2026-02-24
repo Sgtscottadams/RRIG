@@ -576,10 +576,10 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflowY: 'auto' }}>
 
       {/* Top row: Schematic (left, ≤50%) + KPI cards (right) — stacks on mobile */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', flexShrink: 0 }}>
+      <div className="overview-top">
 
         {/* Pipeline Schematic — caps at 50% on wide screens */}
-        <div className="glass-card" style={{ flex: '1 1 320px', maxWidth: '50%', padding: '12px 14px', minWidth: 280 }}>
+        <div className="glass-card overview-schematic" style={{ padding: '12px 14px' }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
           }}>
@@ -603,7 +603,7 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
         </div>
 
         {/* KPI cards — fill remaining space */}
-        <div style={{ flex: '1 1 260px', display: 'flex', flexWrap: 'wrap', gap: 6, alignContent: 'flex-start' }}>
+        <div className="overview-kpis">
           <KpiCard label="Total Flow Rate" value={liveFlow.toLocaleString()} unit="bbl/h"
             sub="Azul Pipeline System" color="var(--accent-cyan)" />
           <KpiCard label="Volume Today" value={(kpi.totalVolume24h/1000).toFixed(0)+'K'} unit="bbl"

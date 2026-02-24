@@ -296,6 +296,22 @@ body { overflow: hidden; }
 @media (min-width: 768px) and (max-width: 1279px) { .hide-tablet { display: none !important; } }
 @media (min-width: 1280px) { .hide-desktop { display: none !important; } }
 
+/* ---- Overview top-row: schematic + KPIs side by side on wide screens ---- */
+.overview-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+.overview-schematic { flex: 1 1 100%; }
+.overview-kpis      { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+
+@media (min-width: 900px) {
+  .overview-schematic { flex: 0 0 calc(50% - 6px); max-width: calc(50% - 6px); }
+  .overview-kpis      { flex: 1 1 calc(50% - 6px); }
+}
+
 /* ---- Animations ---- */
 @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 .pulse { animation: pulse-dot 1.8s ease-in-out infinite; }
