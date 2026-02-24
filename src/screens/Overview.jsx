@@ -575,43 +575,48 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflowY: 'auto' }}>
 
-      {/* Pipeline Schematic — full width, top of page */}
-      <div className="glass-card" style={{ padding: '12px 14px', flexShrink: 0 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
-        }}>
-          <div style={{
-            fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
-            letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)',
-          }}>Azul Pipeline — System Schematic</div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', opacity: 0.7 }}>
-            Tap node for details
-          </div>
-        </div>
-        <PipelineSchematic
-          pumps={pumps}
-          tanks={tanks}
-          alarms={alarms}
-          onSelect={(facilityId) => {
-            const fac = allFacilityStatuses.find(f => f.id === facilityId)
-            if (fac) setSelectedFacility(fac)
-          }}
-        />
-      </div>
+      {/* Top row: Schematic (left, ≤50%) + KPI cards (right) — stacks on mobile */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', flexShrink: 0 }}>
 
-      {/* KPI Row */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <KpiCard label="Total Flow Rate" value={liveFlow.toLocaleString()} unit="bbl/h"
-          sub="Azul Pipeline System" color="var(--accent-cyan)" />
-        <KpiCard label="Volume Today" value={(kpi.totalVolume24h/1000).toFixed(0)+'K'} unit="bbl"
-          sub="24-hour total" />
-        <KpiCard label="Active Alarms" value={unacked.length} sub={`${activeAlarms.length} total active`}
-          color={unacked.length > 0 ? 'var(--status-alarm)' : 'var(--status-normal)'} />
-        <KpiCard label="Pumps Running" value={`${runningPumps}/${pumps.length}`} sub="Online / Total"
-          color="var(--status-normal)" />
-        <KpiCard label="Avg Pressure" value={liveAvgPsi} unit="PSI" sub="Discharge header" />
-        <KpiCard label="System Efficiency" value={`${kpi.systemEfficiency}%`} sub="Last 24h"
-          color={kpi.systemEfficiency > 90 ? 'var(--status-normal)' : 'var(--status-warning)'} />
+        {/* Pipeline Schematic — caps at 50% on wide screens */}
+        <div className="glass-card" style={{ flex: '1 1 320px', maxWidth: '50%', padding: '12px 14px', minWidth: 280 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+          }}>
+            <div style={{
+              fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
+              letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)',
+            }}>Azul Pipeline — System Schematic</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', opacity: 0.7 }}>
+              Tap node for details
+            </div>
+          </div>
+          <PipelineSchematic
+            pumps={pumps}
+            tanks={tanks}
+            alarms={alarms}
+            onSelect={(facilityId) => {
+              const fac = allFacilityStatuses.find(f => f.id === facilityId)
+              if (fac) setSelectedFacility(fac)
+            }}
+          />
+        </div>
+
+        {/* KPI cards — fill remaining space */}
+        <div style={{ flex: '1 1 260px', display: 'flex', flexWrap: 'wrap', gap: 6, alignContent: 'flex-start' }}>
+          <KpiCard label="Total Flow Rate" value={liveFlow.toLocaleString()} unit="bbl/h"
+            sub="Azul Pipeline System" color="var(--accent-cyan)" />
+          <KpiCard label="Volume Today" value={(kpi.totalVolume24h/1000).toFixed(0)+'K'} unit="bbl"
+            sub="24-hour total" />
+          <KpiCard label="Active Alarms" value={unacked.length} sub={`${activeAlarms.length} total active`}
+            color={unacked.length > 0 ? 'var(--status-alarm)' : 'var(--status-normal)'} />
+          <KpiCard label="Pumps Running" value={`${runningPumps}/${pumps.length}`} sub="Online / Total"
+            color="var(--status-normal)" />
+          <KpiCard label="Avg Pressure" value={liveAvgPsi} unit="PSI" sub="Discharge header" />
+          <KpiCard label="System Efficiency" value={`${kpi.systemEfficiency}%`} sub="Last 24h"
+            color={kpi.systemEfficiency > 90 ? 'var(--status-normal)' : 'var(--status-warning)'} />
+        </div>
+
       </div>
 
       {/* Two column layout */}
