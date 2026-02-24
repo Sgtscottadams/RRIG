@@ -223,6 +223,19 @@ export default function App() {
               </div>
             </div>
 
+            {/* Mobile home button */}
+            <button
+              className="btn hide-desktop"
+              onClick={() => navigate('/')}
+              style={{
+                padding: '6px 8px', minWidth: 36,
+                background: location.pathname === '/' ? 'rgba(59,158,255,0.14)' : undefined,
+                borderColor: location.pathname === '/' ? 'rgba(59,158,255,0.4)' : undefined,
+                color: location.pathname === '/' ? 'var(--accent-blue)' : undefined,
+              }}>
+              {Icons.overview}
+            </button>
+
             {/* Separator */}
             <div style={{ width: 1, height: 28, background: 'var(--glass-border)', flexShrink: 0 }} className="hide-mobile" />
 
