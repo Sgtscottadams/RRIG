@@ -29,59 +29,121 @@ function KpiCard({ label, value, unit, sub, color }) {
   )
 }
 
-function FacilityStatusRow({ id, name, type, status, flow, flowUnit, alarmCount, onClick }) {
+function FacilityStatusRow({ name, type, typeRaw, status, flow, flowUnit, alarmCount, pumpStatuses, onClick }) {
   const statusColor = {
     NORMAL: 'var(--status-normal)', WARNING: 'var(--status-warning)',
     ALARM: 'var(--status-alarm)', OFFLINE: 'var(--text-muted)',
   }[status] || 'var(--text-muted)'
-  const badgeClass = { NORMAL: 'badge-normal', WARNING: 'badge-warning', ALARM: 'badge-alarm', OFFLINE: 'badge-cleared' }[status] || 'badge-cleared'
+  const badgeClass  = { NORMAL: 'badge-normal', WARNING: 'badge-warning', ALARM: 'badge-alarm' }[status] || 'badge-cleared'
+  const cardClass   = { NORMAL: 'card-normal',  WARNING: 'card-warning',  ALARM: 'card-alarm'  }[status] || 'card-normal'
+  const runningCount = pumpStatuses ? pumpStatuses.filter(s => s === 'RUNNING').length : 0
+  const totalCount   = pumpStatuses ? pumpStatuses.length : 0
+  const hasFault     = pumpStatuses ? pumpStatuses.some(s => s === 'FAULT') : false
 
   return (
-    <div onClick={onClick} className="glass-card" style={{
-      padding: '10px 14px', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', gap: 10,
-      borderLeft: `3px solid ${statusColor}`,
+    <div onClick={onClick} className={`glass-card ${cardClass}`} style={{
+      padding: '10px 12px', cursor: 'pointer',
+      display: 'flex', flexDirection: 'column', gap: 8,
+      borderTop: `3px solid ${statusColor}`,
     }}>
-      <span className={`dot dot-${status?.toLowerCase()}`} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {name}
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 14,
+            color: 'var(--text-primary)', lineHeight: 1.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{typeRaw}</div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{type}</div>
+        <span className={`status-badge ${badgeClass}`} style={{ flexShrink: 0 }}>{status}</span>
       </div>
-      {flow !== undefined && (
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <span className="value-display" style={{ fontSize: 16 }}>{flow.toLocaleString()}</span>
-          <span className="value-unit">{flowUnit}</span>
+
+      {/* Metrics — show for facilities that have running pumps */}
+      {(flow !== undefined || totalCount > 0) && (
+        <div style={{ display: 'flex', gap: 4 }}>
+          {flow !== undefined && (
+            <div style={{ flex: 1, background: 'rgba(0,0,0,0.2)', borderRadius: 5, padding: '4px 8px' }}>
+              <div className="value-label">Flow</div>
+              <span className="value-display" style={{ fontSize: 15 }}>{flow.toLocaleString()}</span>
+              <span className="value-unit">{flowUnit}</span>
+            </div>
+          )}
+          {totalCount > 0 && (
+            <div style={{ flex: 1, background: 'rgba(0,0,0,0.2)', borderRadius: 5, padding: '4px 8px' }}>
+              <div className="value-label">Pumps</div>
+              <span className="value-display" style={{ fontSize: 15 }}>{runningCount}/{totalCount}</span>
+              <span className="value-unit" style={{ color: hasFault ? 'var(--status-alarm)' : undefined }}>
+                {hasFault ? 'FAULT' : 'RUN'}
+              </span>
+            </div>
+          )}
         </div>
       )}
-      <span className={`status-badge ${badgeClass}`}>{status}</span>
-      {alarmCount > 0 && (
-        <span style={{ background: 'var(--status-alarm)', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>
-          {alarmCount}
-        </span>
+
+      {/* For non-pump facilities show the computed type (includes tank level %) */}
+      {flow === undefined && totalCount === 0 && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono, monospace' }}>
+          {type}
+        </div>
       )}
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>›</span>
+
+      {/* Footer */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+        {alarmCount > 0 ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4,
+            color: 'var(--status-alarm)', fontSize: 11, fontWeight: 600 }}>
+            <span className="pulse" style={{ display: 'inline-block', width: 5, height: 5,
+              borderRadius: '50%', background: 'var(--status-alarm)', flexShrink: 0 }} />
+            {alarmCount} alarm{alarmCount > 1 ? 's' : ''}
+          </span>
+        ) : (
+          <span className="status-badge badge-normal">● NORMAL</span>
+        )}
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>›</span>
+      </div>
     </div>
   )
 }
 
 function OverviewAlarmRow({ alarm, onClick }) {
-  const sev = alarm.severity?.toLowerCase()
-  const badgeClass = sev === 'critical' ? 'badge-critical' : sev === 'warning' ? 'badge-warning' : 'badge-normal'
+  const sev         = alarm.severity?.toLowerCase()
+  const badgeClass  = sev === 'critical' ? 'badge-critical' : 'badge-warning'
+  const borderColor = sev === 'critical' ? 'var(--status-alarm)' : 'var(--status-warning)'
+  const cardClass   = sev === 'critical' ? 'card-alarm' : 'card-warning'
+
   return (
-    <div onClick={() => onClick(alarm)} className="glass-card" style={{
-      padding: '8px 12px', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', gap: 10,
-      borderLeft: `3px solid ${sev === 'critical' ? 'var(--status-alarm)' : 'var(--status-warning)'}`,
+    <div onClick={() => onClick(alarm)} className={`glass-card ${cardClass}`} style={{
+      padding: '10px 12px', cursor: 'pointer',
+      display: 'flex', flexDirection: 'column', gap: 6,
+      borderTop: `3px solid ${borderColor}`,
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 13,
+          color: 'var(--text-primary)', lineHeight: 1.25, flex: 1, minWidth: 0 }}>
           {alarm.name}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{alarm.facilityName} · {alarm.timestamp}</div>
+        <span className={`status-badge ${badgeClass}`} style={{ flexShrink: 0 }}>{alarm.severity}</span>
       </div>
-      <span className={`status-badge ${badgeClass}`}>{alarm.severity}</span>
+
+      {/* Facility */}
+      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{alarm.facilityName}</div>
+
+      {/* Value vs setpoint */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: 'var(--text-value)' }}>
+          {alarm.value}
+          {alarm.setpoint && (
+            <span style={{ color: 'var(--text-muted)' }}> / {alarm.setpoint}</span>
+          )}
+        </span>
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+          {alarm.duration !== 'Cleared' ? alarm.duration : '—'}
+        </span>
+      </div>
     </div>
   )
 }
@@ -505,7 +567,7 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
   )
 
   const recentAlarms = useMemo(() =>
-    activeAlarms.filter(a => matchesOverviewAlarm(a, filters, searchQuery)).slice(0, 4),
+    activeAlarms.filter(a => matchesOverviewAlarm(a, filters, searchQuery)).slice(0, 6),
     [activeAlarms, filters, searchQuery]
   )
 
@@ -531,7 +593,7 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
       <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, flexWrap: 'wrap' }}>
 
         {/* Facility Status Column */}
-        <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
@@ -544,9 +606,13 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
               fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
             }}>View All →</button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, overflowY: 'auto' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
+            gap: 8, overflowY: 'auto', alignContent: 'start',
+          }}>
             {facilityStatuses.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontFamily: 'Barlow Condensed, sans-serif', fontSize: 13 }}>
+              <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0', fontFamily: 'Barlow Condensed, sans-serif', fontSize: 13 }}>
                 No facilities match current filters
               </div>
             ) : facilityStatuses.map(f => (
@@ -576,8 +642,10 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
               pumps={pumps}
               tanks={tanks}
               alarms={alarms}
-              addFilter={addFilter}
-              clearFilters={clearFilters}
+              onSelect={(facilityId) => {
+                const fac = allFacilityStatuses.find(f => f.id === facilityId)
+                if (fac) setSelectedFacility(fac)
+              }}
             />
           </div>
 
@@ -599,9 +667,17 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '16px 0', fontFamily: 'Barlow Condensed, sans-serif', fontSize: 13 }}>
                 No alarms match current filters
               </div>
-            ) : recentAlarms.map(a => (
-              <OverviewAlarmRow key={a.id} alarm={a} onClick={onAlarmClick} />
-            ))}
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))',
+                gap: 6,
+              }}>
+                {recentAlarms.map(a => (
+                  <OverviewAlarmRow key={a.id} alarm={a} onClick={onAlarmClick} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -634,11 +710,9 @@ const STATUS_COLOR = {
   OFFLINE: '#636366',
 }
 
-function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
-  const navigate = useNavigate()
+function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
   const [hovered, setHovered] = useState(null)
 
-  // Derive worst-case status for a facility from live pump/tank/alarm data
   const facilityStatus = (facilityId) => {
     const fp = pumps.filter(p => p.facility === facilityId)
     const ft = tanks.filter(t => t.facility === facilityId)
@@ -649,123 +723,117 @@ function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
     return 'NORMAL'
   }
 
-  const goTo = (screen, facilityId) => {
-    clearFilters()
-    if (facilityId) addFilter({ type: 'facility', value: facilityId })
-    navigate(screen)
-  }
+  // Layout constants — extra vertical room for two-line labels
+  const PY = 102  // pipeline y-axis
+  const TY = 178  // storage node center y
 
-  // Layout constants
-  const PY = 84   // pipeline y-axis
-  const TY = 162  // storage node center y
-
-  // Pump station nodes along the backbone
   const psNodes = [
-    { id: 'AZL-HUB', label: 'MAIN HUB', x: 50,  screen: '/alarms', facilityId: null },
-    { id: 'AZL-PS1', label: 'PS-001',   x: 148, screen: '/pumps',  facilityId: 'AZL-PS1' },
-    { id: 'AZL-PS2', label: 'PS-002',   x: 238, screen: '/pumps',  facilityId: 'AZL-PS2' },
-    { id: 'NM-PS3',  label: 'PS-003',   x: 328, screen: '/pumps',  facilityId: 'NM-PS3'  },
-    { id: 'CR-PS4',  label: 'PS-004',   x: 418, screen: '/pumps',  facilityId: 'CR-PS4'  },
+    { id: 'AZL-HUB', label: 'HUB',    sub: 'Main Hub',   x: 50,  facilityId: 'AZL-HUB' },
+    { id: 'AZL-PS1', label: 'PS-001', sub: 'Azul',       x: 148, facilityId: 'AZL-PS1' },
+    { id: 'AZL-PS2', label: 'PS-002', sub: 'Azul',       x: 238, facilityId: 'AZL-PS2' },
+    { id: 'NM-PS3',  label: 'PS-003', sub: 'N. Mesa',    x: 328, facilityId: 'NM-PS3'  },
+    { id: 'CR-PS4',  label: 'PS-004', sub: 'Cedar Rdg',  x: 418, facilityId: 'CR-PS4'  },
   ]
 
-  // Storage nodes hanging below the backbone
   const storageNodes = [
-    { id: 'AZL-TK1', label: 'TK-A',  x: 148, screen: '/tanks', facilityId: 'AZL-TK1' },
-    { id: 'AZL-TK2', label: 'TK-B',  x: 238, screen: '/tanks', facilityId: 'AZL-TK2' },
-    { id: 'NM-PIT1', label: 'PIT-1', x: 328, screen: '/tanks', facilityId: 'NM-PIT1' },
+    { id: 'AZL-TK1', label: 'TK-A',  sub: 'Azul',    x: 148, facilityId: 'AZL-TK1' },
+    { id: 'AZL-TK2', label: 'TK-B',  sub: 'Azul',    x: 238, facilityId: 'AZL-TK2' },
+    { id: 'NM-PIT1', label: 'PIT-1', sub: 'N. Mesa', x: 328, facilityId: 'NM-PIT1' },
   ]
 
   return (
-    <svg viewBox="0 0 468 200" style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <svg viewBox="0 0 468 228" style={{ width: '100%', height: 'auto', display: 'block' }}>
       <defs>
         <pattern id="schGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5"/>
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(128,128,128,0.07)" strokeWidth="0.5"/>
         </pattern>
       </defs>
-      <rect width="468" height="200" fill="url(#schGrid)" rx="6"/>
+      <rect width="468" height="228" fill="url(#schGrid)" rx="6"/>
 
       {/* Backbone pipeline */}
       <line x1="32" y1={PY} x2="446" y2={PY}
-        stroke="rgba(90,200,250,0.3)" strokeWidth="5" strokeLinecap="round"/>
+        stroke="rgba(90,200,250,0.35)" strokeWidth="5" strokeLinecap="round"/>
 
       {/* Flow direction chevrons */}
       {[96, 191, 281, 371].map(x => (
         <polygon key={x}
           points={`${x-5},${PY-4} ${x+5},${PY} ${x-5},${PY+4}`}
-          fill="rgba(90,200,250,0.5)"/>
+          fill="rgba(90,200,250,0.55)"/>
       ))}
 
       {/* Drop lines to storage */}
       {storageNodes.map(n => (
         <line key={n.id}
-          x1={n.x} y1={PY + 19} x2={n.x} y2={TY - 17}
-          stroke="rgba(90,200,250,0.2)" strokeWidth="1.5" strokeDasharray="3,3"/>
+          x1={n.x} y1={PY + 19} x2={n.x} y2={TY - 18}
+          stroke="rgba(90,200,250,0.25)" strokeWidth="1.5" strokeDasharray="3,3"/>
       ))}
 
       {/* ── Pump station nodes ── */}
       {psNodes.map(node => {
-        const status = facilityStatus(node.id)
-        const color  = STATUS_COLOR[status]
-        const isH    = hovered === node.id
-
-        const facPumps  = pumps.filter(p => p.facility === node.id)
+        const status   = facilityStatus(node.id)
+        const color    = STATUS_COLOR[status]
+        const isH      = hovered === node.id
+        const facPumps = pumps.filter(p => p.facility === node.id)
         const totalFlow = facPumps.reduce((s, p) => s + (p.status === 'RUNNING' ? p.flow : 0), 0)
         const hasFault  = facPumps.some(p => p.status === 'FAULT')
         const allStby   = facPumps.length > 0 && facPumps.every(p => p.status === 'STANDBY')
 
-        // Sub-label shown below node: live flow, FAULT, or STBY
-        const subLabel = totalFlow > 0
-          ? `${(totalFlow / 1000).toFixed(1)}K`
-          : hasFault ? 'FAULT'
-          : allStby   ? 'STBY'
-          : ''
-        const subColor = hasFault ? '#ff3b30' : 'rgba(255,255,255,0.4)'
+        const flowLabel = totalFlow > 0 ? `${(totalFlow / 1000).toFixed(1)}K`
+                        : hasFault      ? 'FAULT'
+                        : allStby       ? 'STBY' : ''
 
         return (
           <g key={node.id}
             style={{ cursor: 'pointer' }}
             onMouseEnter={() => setHovered(node.id)}
             onMouseLeave={() => setHovered(null)}
-            onClick={() => goTo(node.screen, node.facilityId)}>
+            onClick={() => onSelect(node.facilityId)}>
 
-            {/* Hover glow ring */}
-            {isH && (
-              <circle cx={node.x} cy={PY} r={25} fill={color} opacity={0.13}/>
-            )}
+            {isH && <circle cx={node.x} cy={PY} r={25} fill={color} opacity={0.13}/>}
 
-            {/* Node body */}
-            <circle cx={node.x} cy={PY} r={17}
-              fill="rgba(0,0,0,0.55)"
+            {/* Node body — neutral fill works in both day and night themes */}
+            <circle cx={node.x} cy={PY} r={18}
+              style={{ fill: 'var(--bg-card, rgba(0,0,0,0.08))' }}
               stroke={color} strokeWidth={isH ? 2.5 : 1.5}/>
 
-            {/* Status indicator dot */}
-            <circle cx={node.x} cy={PY} r={6}
-              fill={color} opacity={isH ? 1 : 0.85}/>
+            {/* Status dot */}
+            <circle cx={node.x} cy={PY} r={7}
+              fill={color} opacity={isH ? 1 : 0.9}/>
 
-            {/* Label above */}
-            <text x={node.x} y={PY - 24} textAnchor="middle"
-              fontSize="8.5" fontWeight="700"
+            {/* Station code — line 1 above node */}
+            <text x={node.x} y={PY - 29}
+              textAnchor="middle"
+              fontSize="10" fontWeight="700"
               fontFamily="Barlow Condensed, sans-serif"
               letterSpacing="0.07em"
-              fill={isH ? color : 'rgba(255,255,255,0.65)'}>
+              style={{ fill: isH ? color : 'var(--text-primary)' }}>
               {node.label}
             </text>
 
-            {/* Sublabel: flow or fault status */}
-            {subLabel && (
-              <text x={node.x} y={PY + 30} textAnchor="middle"
-                fontSize="7.5" fontFamily="IBM Plex Mono, monospace"
-                fill={subColor}>
-                {subLabel}
+            {/* Facility name — line 2 above node */}
+            <text x={node.x} y={PY - 18}
+              textAnchor="middle"
+              fontSize="8"
+              fontFamily="Barlow Condensed, sans-serif"
+              style={{ fill: 'var(--text-muted)' }}>
+              {node.sub}
+            </text>
+
+            {/* Flow / status value below node */}
+            {flowLabel && (
+              <text x={node.x} y={PY + 32}
+                textAnchor="middle"
+                fontSize="8.5" fontFamily="IBM Plex Mono, monospace"
+                style={{ fill: hasFault ? '#ff3b30' : 'var(--text-secondary)' }}>
+                {flowLabel}
               </text>
             )}
-
-            {/* "bbl/h" unit — only for flow values */}
             {totalFlow > 0 && (
-              <text x={node.x} y={PY + 39} textAnchor="middle"
-                fontSize="6" fontFamily="Barlow Condensed, sans-serif"
+              <text x={node.x} y={PY + 43}
+                textAnchor="middle"
+                fontSize="6.5" fontFamily="Barlow Condensed, sans-serif"
                 letterSpacing="0.04em"
-                fill="rgba(255,255,255,0.22)">
+                style={{ fill: 'var(--text-muted)' }}>
                 bbl/h
               </text>
             )}
@@ -775,15 +843,13 @@ function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
 
       {/* ── Storage / tank nodes ── */}
       {storageNodes.map(node => {
-        const tank = tanks.find(t => t.facility === node.id)
+        const tank  = tanks.find(t => t.facility === node.id)
         if (!tank) return null
-
         const pct   = tank.levelPct
-        const color = tank.alarm === 'ALARM'   ? '#ff3b30'
-                    : tank.alarm === 'WARNING'  ? '#ffd60a'
-                    : '#32d74b'
+        const color = tank.alarm === 'ALARM'  ? '#ff3b30'
+                    : tank.alarm === 'WARNING' ? '#ffd60a' : '#32d74b'
         const isH   = hovered === node.id
-        const W = 36, H = 28
+        const W = 38, H = 30
         const fillW = Math.max(1, Math.round((W - 6) * pct / 100))
 
         return (
@@ -791,9 +857,8 @@ function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
             style={{ cursor: 'pointer' }}
             onMouseEnter={() => setHovered(node.id)}
             onMouseLeave={() => setHovered(null)}
-            onClick={() => goTo(node.screen, node.facilityId)}>
+            onClick={() => onSelect(node.facilityId)}>
 
-            {/* Hover glow */}
             {isH && (
               <rect x={node.x - W/2 - 5} y={TY - H/2 - 5} width={W + 10} height={H + 10}
                 fill={color} opacity={0.1} rx={6}/>
@@ -801,31 +866,41 @@ function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
 
             {/* Tank body */}
             <rect x={node.x - W/2} y={TY - H/2} width={W} height={H} rx={3}
-              fill="rgba(0,0,0,0.5)"
+              style={{ fill: 'var(--bg-card, rgba(0,0,0,0.08))' }}
               stroke={color} strokeWidth={isH ? 2 : 1.5}/>
 
-            {/* Level bar track */}
-            <rect x={node.x - W/2 + 3} y={TY - H/2 + 5} width={W - 6} height={8} rx={1}
-              fill="rgba(255,255,255,0.06)"/>
+            {/* Level track */}
+            <rect x={node.x - W/2 + 3} y={TY - H/2 + 6} width={W - 6} height={9} rx={1}
+              fill="rgba(128,128,128,0.2)"/>
 
             {/* Level fill */}
-            <rect x={node.x - W/2 + 3} y={TY - H/2 + 5} width={fillW} height={8} rx={1}
-              fill={color} opacity={0.7}/>
+            <rect x={node.x - W/2 + 3} y={TY - H/2 + 6} width={fillW} height={9} rx={1}
+              fill={color} opacity={0.85}/>
 
-            {/* Pct readout */}
-            <text x={node.x} y={TY + 8} textAnchor="middle"
-              fontSize="7" fontFamily="IBM Plex Mono, monospace"
-              fill={isH ? color : 'rgba(255,255,255,0.45)'}>
+            {/* Pct */}
+            <text x={node.x} y={TY + 10}
+              textAnchor="middle"
+              fontSize="8" fontFamily="IBM Plex Mono, monospace"
+              style={{ fill: isH ? color : 'var(--text-secondary)' }}>
               {pct.toFixed(0)}%
             </text>
 
-            {/* Name label */}
-            <text x={node.x} y={TY + H/2 + 13} textAnchor="middle"
-              fontSize="7.5" fontWeight="700"
+            {/* Label */}
+            <text x={node.x} y={TY + H/2 + 14}
+              textAnchor="middle"
+              fontSize="9" fontWeight="700"
               fontFamily="Barlow Condensed, sans-serif"
-              letterSpacing="0.06em"
-              fill={isH ? color : 'rgba(255,255,255,0.4)'}>
+              letterSpacing="0.05em"
+              style={{ fill: isH ? color : 'var(--text-primary)' }}>
               {node.label}
+            </text>
+
+            {/* Sub-label */}
+            <text x={node.x} y={TY + H/2 + 24}
+              textAnchor="middle"
+              fontSize="7.5" fontFamily="Barlow Condensed, sans-serif"
+              style={{ fill: 'var(--text-muted)' }}>
+              {node.sub}
             </text>
           </g>
         )
@@ -833,10 +908,11 @@ function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
 
       {/* Legend */}
       {[['#32d74b', 'Normal'], ['#ffd60a', 'Warning'], ['#ff3b30', 'Alarm']].map(([color, label], i) => (
-        <g key={label} transform={`translate(${12 + i * 64}, 192)`}>
-          <circle r={3.5} fill={color}/>
-          <text x={8} y={4} fontSize="7" fill="rgba(255,255,255,0.35)"
-            fontFamily="Barlow Condensed, sans-serif">
+        <g key={label} transform={`translate(${12 + i * 68}, 221)`}>
+          <circle r={4} fill={color}/>
+          <text x={9} y={4.5} fontSize="8"
+            fontFamily="Barlow Condensed, sans-serif"
+            style={{ fill: 'var(--text-muted)' }}>
             {label}
           </text>
         </g>
