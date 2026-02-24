@@ -88,7 +88,91 @@ export default function App() {
 
   const navigateToAlarms = useCallback(() => navigate('/alarms'), [navigate])
 
-  const sidebarWidth = sidebarOpen ? 240 : 48
+  // ---- Live simulation — 2s scan rate, 120× sim speed (1 real sec = 2 sim min) ----
+  const [lastScan, setLastScan] = useState(new Date())
+
+  useEffect(() => {
+    const SIM_HRS_PER_TICK = (2 * 120) / 3600  // real seconds × speed factor ÷ sec/hr
+
+    // Mean-reverting random walk: drifts with noise but stays near baseline
+    const drift = (cur, base, vol, rev = 0.1) =>
+      cur + (base - cur) * rev + base * vol * (Math.random() - 0.5) * 2
+
+    const id = setInterval(() => {
+      setPumps(prev => prev.map(pump => {
+        if (pump.status !== 'RUNNING') return pump
+        const base = INITIAL_PUMPS.find(p => p.id === pump.id)
+        if (!base) return pump
+
+        const newFlow        = Math.round(Math.max(500,  drift(pump.flow,         base.flow,         0.015)))
+        const newPressureIn  = Math.round(Math.max(5,    drift(pump.pressure_in,  base.pressure_in,  0.010)))
+        const newPressureOut = Math.round(Math.max(10,   drift(pump.pressure_out, base.pressure_out, 0.012)))
+        const newSpeed       = Math.round(Math.max(500,  drift(pump.speed,        base.speed,        0.005)))
+        const newPower       = Math.round(Math.max(10,   drift(pump.power,        base.power,        0.014)))
+        // Vibration on AZL-PS2-P1 has higher volatility to float around the 0.20 threshold
+        const vibVol         = pump.tag === 'AZL-PS2-P1' ? 0.06 : 0.04
+        const newVib         = parseFloat(Math.max(0.01, drift(pump.vibration, base.vibration, vibVol)).toFixed(2))
+        const newTemp        = parseFloat(Math.max(60,   drift(pump.temp,      base.temp,      0.003)).toFixed(1))
+
+        // Dynamic alarm threshold on the high-vibration pump
+        let { alarm, alarmMsg } = pump
+        if (pump.tag === 'AZL-PS2-P1') {
+          if (newVib > 0.20) {
+            alarm    = 'WARNING'
+            alarmMsg = `High vibration — ${newVib.toFixed(2)} in/s (threshold 0.20)`
+          } else {
+            alarm    = 'NORMAL'
+            alarmMsg = undefined
+          }
+        }
+
+        return {
+          ...pump,
+          flow: newFlow, pressure_in: newPressureIn, pressure_out: newPressureOut,
+          speed: newSpeed, power: newPower, vibration: newVib, temp: newTemp,
+          alarm, alarmMsg,
+        }
+      }))
+
+      setTanks(prev => prev.map(tank => {
+        const newLevel    = Math.round(Math.max(0, Math.min(tank.capacity,
+          tank.level + tank.netFlow * SIM_HRS_PER_TICK)))
+        const newLevelPct = parseFloat(((newLevel / tank.capacity) * 100).toFixed(1))
+        const status      = Math.abs(tank.netFlow) < 50 ? 'STEADY'
+                          : tank.netFlow > 0            ? 'FILLING' : 'DRAINING'
+        const alarm       = newLevelPct >= 95 ? 'ALARM'
+                          : newLevelPct >= 80 ? 'WARNING'
+                          : newLevelPct <=  5 ? 'WARNING' : 'NORMAL'
+        const alarmMsg    = newLevelPct >= 95 ? 'High-high level — overflow risk'
+                          : newLevelPct >= 80 ? 'Tank approaching high level setpoint (95%)'
+                          : newLevelPct <=  5 ? 'Tank low level — below 5% capacity'
+                          : undefined
+        return { ...tank, level: newLevel, levelPct: newLevelPct, status, alarm, alarmMsg }
+      }))
+
+      setLastScan(new Date())
+    }, 2000)
+
+    return () => clearInterval(id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync ALM-002 (vibration) with live pump reading — Ignition-style auto-clear/re-trigger
+  useEffect(() => {
+    const vibPump  = pumps.find(p => p.id === 'PS-003')
+    if (!vibPump) return
+    const isActive = vibPump.vibration > 0.20
+    setAlarms(prev => prev.map(alarm => {
+      if (alarm.id !== 'ALM-002') return alarm
+      if (!isActive && alarm.status !== 'CLEARED')
+        return { ...alarm, status: 'CLEARED', duration: 'Cleared' }
+      if (isActive && alarm.status === 'CLEARED')
+        return { ...alarm, status: 'UNACKNOWLEDGED', ackBy: null, ackTime: null,
+          timestamp: new Date().toLocaleString(), duration: '< 1m' }
+      return alarm
+    }))
+  }, [pumps])
+
+  const sidebarWidth = sidebarOpen ? 160 : 48
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
@@ -105,10 +189,8 @@ export default function App() {
           {/* ---- Header ---- */}
           <header style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            padding: '0 16px', height: 52,
+            padding: '0 14px', height: 46,
             background: 'var(--header-bg)',
-            backdropFilter: 'var(--glass-blur)',
-            WebkitBackdropFilter: 'var(--glass-blur)',
             borderBottom: '1px solid var(--header-border)',
             flexShrink: 0, zIndex: 100,
           }}>
@@ -179,6 +261,28 @@ export default function App() {
 
             {/* Right controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {/* Live scan badge */}
+              <div className="hide-mobile" style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '3px 8px', borderRadius: 6,
+                border: '1px solid rgba(50,215,75,0.3)',
+                background: 'rgba(50,215,75,0.07)',
+              }}>
+                <span className="pulse" style={{
+                  display: 'inline-block', width: 6, height: 6,
+                  borderRadius: '50%', background: '#32d74b', flexShrink: 0,
+                }} />
+                <span style={{
+                  fontFamily: 'Barlow Condensed, sans-serif', fontSize: 10,
+                  fontWeight: 700, letterSpacing: '0.1em', color: '#32d74b',
+                }}>LIVE</span>
+                <span style={{
+                  fontFamily: 'IBM Plex Mono, monospace', fontSize: 9,
+                  color: 'rgba(50,215,75,0.65)',
+                }}>
+                  {lastScan.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </div>
               {/* Alarm bell for mobile/tablet */}
               <button onClick={navigateToAlarms} className="btn hide-desktop"
                 style={{
@@ -224,14 +328,12 @@ export default function App() {
 
             {/* Desktop sidebar */}
             <div className="hide-mobile hide-tablet" style={{
-              width: sidebarOpen ? 240 : 0,
+              width: sidebarOpen ? 160 : 0,
               flexShrink: 0,
               overflow: 'hidden',
-              transition: 'width 0.25s ease',
-              borderRight: '1px solid var(--glass-border)',
+              transition: 'width 0.2s ease',
+              borderRight: '1px solid var(--border)',
               background: 'var(--sidebar-bg)',
-              backdropFilter: 'var(--glass-blur)',
-              WebkitBackdropFilter: 'var(--glass-blur)',
             }}>
               <FilterSidebar
                 collapsed={!sidebarOpen}
@@ -243,6 +345,7 @@ export default function App() {
                 setSearchQuery={setSearchQuery}
                 facilities={FACILITIES}
                 equipmentTypes={EQUIPMENT_TYPES}
+                pumps={pumps}
                 alarms={alarms}
               />
             </div>
@@ -254,11 +357,9 @@ export default function App() {
                 background: 'rgba(0,0,0,0.5)',
               }} onClick={() => setMobileSidebarOpen(false)}>
                 <div style={{
-                  width: 280, height: '100%',
+                  width: 220, height: '100%',
                   background: 'var(--sidebar-bg)',
-                  backdropFilter: 'var(--glass-blur)',
-                  WebkitBackdropFilter: 'var(--glass-blur)',
-                  borderRight: '1px solid var(--glass-border)',
+                  borderRight: '1px solid var(--border)',
                   overflow: 'hidden',
                 }} onClick={e => e.stopPropagation()}>
                   <FilterSidebar
@@ -271,6 +372,7 @@ export default function App() {
                     setSearchQuery={setSearchQuery}
                     facilities={FACILITIES}
                     equipmentTypes={EQUIPMENT_TYPES}
+                    pumps={pumps}
                     alarms={alarms}
                     onClose={() => setMobileSidebarOpen(false)}
                   />
@@ -281,10 +383,10 @@ export default function App() {
             {/* Main content */}
             <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <Routes>
-                <Route path="/" element={<Overview pumps={pumps} tanks={tanks} alarms={alarms} onAlarmClick={navigateToAlarms} />} />
-                <Route path="/pumps" element={<PumpStations pumps={pumps} filters={filters} searchQuery={searchQuery} addFilter={addFilter} />} />
+                <Route path="/" element={<Overview pumps={pumps} tanks={tanks} alarms={alarms} filters={filters} searchQuery={searchQuery} onAlarmClick={navigateToAlarms} addFilter={addFilter} clearFilters={clearFilters} />} />
+                <Route path="/pumps" element={<PumpStations pumps={pumps} filters={filters} searchQuery={searchQuery} addFilter={addFilter} clearFilters={clearFilters} />} />
                 <Route path="/tanks" element={<TankMonitor tanks={tanks} filters={filters} searchQuery={searchQuery} />} />
-                <Route path="/alarms" element={<AlarmSummary alarms={alarms} filters={filters} searchQuery={searchQuery} addFilter={addFilter} onAck={ackAlarm} />} />
+                <Route path="/alarms" element={<AlarmSummary alarms={alarms} filters={filters} searchQuery={searchQuery} addFilter={addFilter} clearFilters={clearFilters} onAck={ackAlarm} />} />
                 <Route path="/trends" element={<TrendView />} />
               </Routes>
             </main>

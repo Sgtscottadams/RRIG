@@ -449,14 +449,20 @@ function matchesOverviewAlarm(alarm, filters, searchQuery) {
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-export default function Overview({ pumps, tanks, alarms, filters = [], searchQuery = '', onAlarmClick }) {
+export default function Overview({ pumps, tanks, alarms, filters = [], searchQuery = '', onAlarmClick, addFilter, clearFilters }) {
   const navigate = useNavigate()
   const kpi = OVERVIEW_KPIS
   const [selectedFacility, setSelectedFacility] = useState(null)
 
-  const runningPumps = pumps.filter(p => p.status === 'RUNNING').length
+  const runningArr   = pumps.filter(p => p.status === 'RUNNING')
+  const runningPumps = runningArr.length
   const activeAlarms = alarms.filter(a => a.status !== 'CLEARED')
-  const unacked = alarms.filter(a => a.status === 'UNACKNOWLEDGED')
+  const unacked      = alarms.filter(a => a.status === 'UNACKNOWLEDGED')
+  // Live-computed KPIs derived from pump state
+  const liveFlow    = runningArr.reduce((s, p) => s + p.flow, 0)
+  const liveAvgPsi  = runningArr.length > 0
+    ? Math.round(runningArr.reduce((s, p) => s + p.pressure_out, 0) / runningArr.length)
+    : 0
 
   // Derive facility statuses from live pump/tank/alarm data
   const allFacilityStatuses = useMemo(() => FACILITIES.map(fac => {
@@ -508,7 +514,7 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
 
       {/* KPI Row */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <KpiCard label="Total Flow Rate" value={kpi.totalFlow.toLocaleString()} unit="bbl/h"
+        <KpiCard label="Total Flow Rate" value={liveFlow.toLocaleString()} unit="bbl/h"
           sub="Azul Pipeline System" color="var(--accent-cyan)" />
         <KpiCard label="Volume Today" value={(kpi.totalVolume24h/1000).toFixed(0)+'K'} unit="bbl"
           sub="24-hour total" />
@@ -516,7 +522,7 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
           color={unacked.length > 0 ? 'var(--status-alarm)' : 'var(--status-normal)'} />
         <KpiCard label="Pumps Running" value={`${runningPumps}/${pumps.length}`} sub="Online / Total"
           color="var(--status-normal)" />
-        <KpiCard label="Avg Pressure" value={kpi.avgPressure} unit="PSI" sub="Pipeline header" />
+        <KpiCard label="Avg Pressure" value={liveAvgPsi} unit="PSI" sub="Discharge header" />
         <KpiCard label="System Efficiency" value={`${kpi.systemEfficiency}%`} sub="Last 24h"
           color={kpi.systemEfficiency > 90 ? 'var(--status-normal)' : 'var(--status-warning)'} />
       </div>
@@ -554,12 +560,25 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
         <div style={{ flex: '1 1 280px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* Pipeline schematic */}
-          <div className="glass-card" style={{ padding: 16, minHeight: 180 }}>
+          <div className="glass-card" style={{ padding: '12px 14px' }}>
             <div style={{
-              fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
-              letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10,
-            }}>Azul Pipeline — System Overview</div>
-            <PipelineSchematic />
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+            }}>
+              <div style={{
+                fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
+                letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)',
+              }}>Azul Pipeline — System Schematic</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', opacity: 0.7 }}>
+                Click node to navigate
+              </div>
+            </div>
+            <PipelineSchematic
+              pumps={pumps}
+              tanks={tanks}
+              alarms={alarms}
+              addFilter={addFilter}
+              clearFilters={clearFilters}
+            />
           </div>
 
           {/* Recent Alarms */}
@@ -606,49 +625,222 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
   )
 }
 
-// ─── Pipeline Schematic SVG ───────────────────────────────────────────────────
+// ─── Pipeline Schematic SVG — Interactive ────────────────────────────────────
 
-function PipelineSchematic() {
+const STATUS_COLOR = {
+  NORMAL:  '#32d74b',
+  WARNING: '#ffd60a',
+  ALARM:   '#ff3b30',
+  OFFLINE: '#636366',
+}
+
+function PipelineSchematic({ pumps, tanks, alarms, addFilter, clearFilters }) {
+  const navigate = useNavigate()
+  const [hovered, setHovered] = useState(null)
+
+  // Derive worst-case status for a facility from live pump/tank/alarm data
+  const facilityStatus = (facilityId) => {
+    const fp = pumps.filter(p => p.facility === facilityId)
+    const ft = tanks.filter(t => t.facility === facilityId)
+    if (fp.some(p => p.status === 'FAULT' || p.alarm === 'ALARM') || ft.some(t => t.alarm === 'ALARM'))
+      return 'ALARM'
+    if (fp.some(p => p.alarm === 'WARNING') || ft.some(t => t.alarm === 'WARNING'))
+      return 'WARNING'
+    return 'NORMAL'
+  }
+
+  const goTo = (screen, facilityId) => {
+    clearFilters()
+    if (facilityId) addFilter({ type: 'facility', value: facilityId })
+    navigate(screen)
+  }
+
+  // Layout constants
+  const PY = 84   // pipeline y-axis
+  const TY = 162  // storage node center y
+
+  // Pump station nodes along the backbone
+  const psNodes = [
+    { id: 'AZL-HUB', label: 'MAIN HUB', x: 50,  screen: '/alarms', facilityId: null },
+    { id: 'AZL-PS1', label: 'PS-001',   x: 148, screen: '/pumps',  facilityId: 'AZL-PS1' },
+    { id: 'AZL-PS2', label: 'PS-002',   x: 238, screen: '/pumps',  facilityId: 'AZL-PS2' },
+    { id: 'NM-PS3',  label: 'PS-003',   x: 328, screen: '/pumps',  facilityId: 'NM-PS3'  },
+    { id: 'CR-PS4',  label: 'PS-004',   x: 418, screen: '/pumps',  facilityId: 'CR-PS4'  },
+  ]
+
+  // Storage nodes hanging below the backbone
+  const storageNodes = [
+    { id: 'AZL-TK1', label: 'TK-A',  x: 148, screen: '/tanks', facilityId: 'AZL-TK1' },
+    { id: 'AZL-TK2', label: 'TK-B',  x: 238, screen: '/tanks', facilityId: 'AZL-TK2' },
+    { id: 'NM-PIT1', label: 'PIT-1', x: 328, screen: '/tanks', facilityId: 'NM-PIT1' },
+  ]
+
   return (
-    <svg viewBox="0 0 400 140" style={{ width: '100%', height: 'auto' }}>
+    <svg viewBox="0 0 468 200" style={{ width: '100%', height: 'auto', display: 'block' }}>
       <defs>
-        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+        <pattern id="schGrid" width="20" height="20" patternUnits="userSpaceOnUse">
           <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5"/>
         </pattern>
       </defs>
-      <rect width="400" height="140" fill="url(#grid)" rx="6"/>
-      <line x1="30" y1="70" x2="370" y2="70" stroke="rgba(90,200,250,0.4)" strokeWidth="4"/>
-      {[80,150,220,290,350].map(x => (
-        <polygon key={x} points={`${x},66 ${x+8},70 ${x},74`} fill="rgba(90,200,250,0.6)"/>
+      <rect width="468" height="200" fill="url(#schGrid)" rx="6"/>
+
+      {/* Backbone pipeline */}
+      <line x1="32" y1={PY} x2="446" y2={PY}
+        stroke="rgba(90,200,250,0.3)" strokeWidth="5" strokeLinecap="round"/>
+
+      {/* Flow direction chevrons */}
+      {[96, 191, 281, 371].map(x => (
+        <polygon key={x}
+          points={`${x-5},${PY-4} ${x+5},${PY} ${x-5},${PY+4}`}
+          fill="rgba(90,200,250,0.5)"/>
       ))}
-      {[
-        { x: 60,  label: 'HUB',    status: '#32d74b' },
-        { x: 140, label: 'PS-001', status: '#32d74b' },
-        { x: 220, label: 'PS-002', status: '#ffd60a' },
-        { x: 290, label: 'PS-003', status: '#32d74b' },
-        { x: 360, label: 'PS-004', status: '#ff3b30' },
-      ].map(({ x, label, status }) => (
-        <g key={label}>
-          <circle cx={x} cy={70} r="12" fill="rgba(255,255,255,0.04)" stroke={status} strokeWidth="2"/>
-          <circle cx={x} cy={70} r="5" fill={status} opacity="0.8"/>
-          <text x={x} y={94} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.55)" fontFamily="Barlow Condensed, sans-serif" fontWeight="600">{label}</text>
+
+      {/* Drop lines to storage */}
+      {storageNodes.map(n => (
+        <line key={n.id}
+          x1={n.x} y1={PY + 19} x2={n.x} y2={TY - 17}
+          stroke="rgba(90,200,250,0.2)" strokeWidth="1.5" strokeDasharray="3,3"/>
+      ))}
+
+      {/* ── Pump station nodes ── */}
+      {psNodes.map(node => {
+        const status = facilityStatus(node.id)
+        const color  = STATUS_COLOR[status]
+        const isH    = hovered === node.id
+
+        const facPumps  = pumps.filter(p => p.facility === node.id)
+        const totalFlow = facPumps.reduce((s, p) => s + (p.status === 'RUNNING' ? p.flow : 0), 0)
+        const hasFault  = facPumps.some(p => p.status === 'FAULT')
+        const allStby   = facPumps.length > 0 && facPumps.every(p => p.status === 'STANDBY')
+
+        // Sub-label shown below node: live flow, FAULT, or STBY
+        const subLabel = totalFlow > 0
+          ? `${(totalFlow / 1000).toFixed(1)}K`
+          : hasFault ? 'FAULT'
+          : allStby   ? 'STBY'
+          : ''
+        const subColor = hasFault ? '#ff3b30' : 'rgba(255,255,255,0.4)'
+
+        return (
+          <g key={node.id}
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={() => setHovered(node.id)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => goTo(node.screen, node.facilityId)}>
+
+            {/* Hover glow ring */}
+            {isH && (
+              <circle cx={node.x} cy={PY} r={25} fill={color} opacity={0.13}/>
+            )}
+
+            {/* Node body */}
+            <circle cx={node.x} cy={PY} r={17}
+              fill="rgba(0,0,0,0.55)"
+              stroke={color} strokeWidth={isH ? 2.5 : 1.5}/>
+
+            {/* Status indicator dot */}
+            <circle cx={node.x} cy={PY} r={6}
+              fill={color} opacity={isH ? 1 : 0.85}/>
+
+            {/* Label above */}
+            <text x={node.x} y={PY - 24} textAnchor="middle"
+              fontSize="8.5" fontWeight="700"
+              fontFamily="Barlow Condensed, sans-serif"
+              letterSpacing="0.07em"
+              fill={isH ? color : 'rgba(255,255,255,0.65)'}>
+              {node.label}
+            </text>
+
+            {/* Sublabel: flow or fault status */}
+            {subLabel && (
+              <text x={node.x} y={PY + 30} textAnchor="middle"
+                fontSize="7.5" fontFamily="IBM Plex Mono, monospace"
+                fill={subColor}>
+                {subLabel}
+              </text>
+            )}
+
+            {/* "bbl/h" unit — only for flow values */}
+            {totalFlow > 0 && (
+              <text x={node.x} y={PY + 39} textAnchor="middle"
+                fontSize="6" fontFamily="Barlow Condensed, sans-serif"
+                letterSpacing="0.04em"
+                fill="rgba(255,255,255,0.22)">
+                bbl/h
+              </text>
+            )}
+          </g>
+        )
+      })}
+
+      {/* ── Storage / tank nodes ── */}
+      {storageNodes.map(node => {
+        const tank = tanks.find(t => t.facility === node.id)
+        if (!tank) return null
+
+        const pct   = tank.levelPct
+        const color = tank.alarm === 'ALARM'   ? '#ff3b30'
+                    : tank.alarm === 'WARNING'  ? '#ffd60a'
+                    : '#32d74b'
+        const isH   = hovered === node.id
+        const W = 36, H = 28
+        const fillW = Math.max(1, Math.round((W - 6) * pct / 100))
+
+        return (
+          <g key={node.id}
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={() => setHovered(node.id)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => goTo(node.screen, node.facilityId)}>
+
+            {/* Hover glow */}
+            {isH && (
+              <rect x={node.x - W/2 - 5} y={TY - H/2 - 5} width={W + 10} height={H + 10}
+                fill={color} opacity={0.1} rx={6}/>
+            )}
+
+            {/* Tank body */}
+            <rect x={node.x - W/2} y={TY - H/2} width={W} height={H} rx={3}
+              fill="rgba(0,0,0,0.5)"
+              stroke={color} strokeWidth={isH ? 2 : 1.5}/>
+
+            {/* Level bar track */}
+            <rect x={node.x - W/2 + 3} y={TY - H/2 + 5} width={W - 6} height={8} rx={1}
+              fill="rgba(255,255,255,0.06)"/>
+
+            {/* Level fill */}
+            <rect x={node.x - W/2 + 3} y={TY - H/2 + 5} width={fillW} height={8} rx={1}
+              fill={color} opacity={0.7}/>
+
+            {/* Pct readout */}
+            <text x={node.x} y={TY + 8} textAnchor="middle"
+              fontSize="7" fontFamily="IBM Plex Mono, monospace"
+              fill={isH ? color : 'rgba(255,255,255,0.45)'}>
+              {pct.toFixed(0)}%
+            </text>
+
+            {/* Name label */}
+            <text x={node.x} y={TY + H/2 + 13} textAnchor="middle"
+              fontSize="7.5" fontWeight="700"
+              fontFamily="Barlow Condensed, sans-serif"
+              letterSpacing="0.06em"
+              fill={isH ? color : 'rgba(255,255,255,0.4)'}>
+              {node.label}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* Legend */}
+      {[['#32d74b', 'Normal'], ['#ffd60a', 'Warning'], ['#ff3b30', 'Alarm']].map(([color, label], i) => (
+        <g key={label} transform={`translate(${12 + i * 64}, 192)`}>
+          <circle r={3.5} fill={color}/>
+          <text x={8} y={4} fontSize="7" fill="rgba(255,255,255,0.35)"
+            fontFamily="Barlow Condensed, sans-serif">
+            {label}
+          </text>
         </g>
       ))}
-      <line x1="140" y1="70" x2="140" y2="108" stroke="rgba(90,200,250,0.3)" strokeWidth="2" strokeDasharray="4,3"/>
-      <rect x="124" y="108" width="32" height="18" rx="3" fill="rgba(50,215,75,0.15)" stroke="rgba(50,215,75,0.5)" strokeWidth="1.5"/>
-      <text x="140" y="121" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.5)" fontFamily="Barlow Condensed, sans-serif">TK-A 71%</text>
-      <line x1="220" y1="70" x2="220" y2="108" stroke="rgba(90,200,250,0.3)" strokeWidth="2" strokeDasharray="4,3"/>
-      <rect x="204" y="108" width="32" height="18" rx="3" fill="rgba(255,214,10,0.15)" stroke="rgba(255,214,10,0.5)" strokeWidth="1.5"/>
-      <text x="220" y="121" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.5)" fontFamily="Barlow Condensed, sans-serif">TK-B 91%</text>
-      <line x1="290" y1="70" x2="290" y2="108" stroke="rgba(90,200,250,0.3)" strokeWidth="2" strokeDasharray="4,3"/>
-      <rect x="274" y="108" width="32" height="18" rx="3" fill="rgba(50,215,75,0.12)" stroke="rgba(50,215,75,0.4)" strokeWidth="1.5"/>
-      <text x="290" y="121" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.5)" fontFamily="Barlow Condensed, sans-serif">PIT 34%</text>
-      <circle cx="15" cy="130" r="4" fill="#32d74b"/>
-      <text x="23" y="134" fontSize="7" fill="rgba(255,255,255,0.4)" fontFamily="Barlow Condensed">Normal</text>
-      <circle cx="65" cy="130" r="4" fill="#ffd60a"/>
-      <text x="73" y="134" fontSize="7" fill="rgba(255,255,255,0.4)" fontFamily="Barlow Condensed">Warning</text>
-      <circle cx="115" cy="130" r="4" fill="#ff3b30"/>
-      <text x="123" y="134" fontSize="7" fill="rgba(255,255,255,0.4)" fontFamily="Barlow Condensed">Alarm</text>
     </svg>
   )
 }
