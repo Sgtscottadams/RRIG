@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '../App.jsx'
 import {
   ResponsiveContainer, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid,
@@ -574,6 +575,30 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflowY: 'auto' }}>
 
+      {/* Pipeline Schematic — full width, top of page */}
+      <div className="glass-card" style={{ padding: '12px 14px', flexShrink: 0 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+        }}>
+          <div style={{
+            fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
+            letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)',
+          }}>Azul Pipeline — System Schematic</div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', opacity: 0.7 }}>
+            Tap node for details
+          </div>
+        </div>
+        <PipelineSchematic
+          pumps={pumps}
+          tanks={tanks}
+          alarms={alarms}
+          onSelect={(facilityId) => {
+            const fac = allFacilityStatuses.find(f => f.id === facilityId)
+            if (fac) setSelectedFacility(fac)
+          }}
+        />
+      </div>
+
       {/* KPI Row */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <KpiCard label="Total Flow Rate" value={liveFlow.toLocaleString()} unit="bbl/h"
@@ -622,32 +647,8 @@ export default function Overview({ pumps, tanks, alarms, filters = [], searchQue
           </div>
         </div>
 
-        {/* Right column */}
+        {/* Right column — Recent Alarms */}
         <div style={{ flex: '1 1 280px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-          {/* Pipeline schematic */}
-          <div className="glass-card" style={{ padding: '12px 14px' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
-            }}>
-              <div style={{
-                fontFamily: 'Barlow Condensed, sans-serif', fontSize: 12, fontWeight: 700,
-                letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)',
-              }}>Azul Pipeline — System Schematic</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', opacity: 0.7 }}>
-                Click node to navigate
-              </div>
-            </div>
-            <PipelineSchematic
-              pumps={pumps}
-              tanks={tanks}
-              alarms={alarms}
-              onSelect={(facilityId) => {
-                const fac = allFacilityStatuses.find(f => f.id === facilityId)
-                if (fac) setSelectedFacility(fac)
-              }}
-            />
-          </div>
 
           {/* Recent Alarms */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -712,6 +713,10 @@ const STATUS_COLOR = {
 
 function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
   const [hovered, setHovered] = useState(null)
+  const { theme } = useTheme()
+  const clrPrimary   = theme === 'day' ? '#1a2233' : '#dde4f0'
+  const clrSecondary = theme === 'day' ? '#4a5568' : '#7889a0'
+  const clrMuted     = theme === 'day' ? '#8a9ab0' : '#445060'
 
   const facilityStatus = (facilityId) => {
     const fp = pumps.filter(p => p.facility === facilityId)
@@ -806,7 +811,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
               fontSize="10" fontWeight="700"
               fontFamily="Barlow Condensed, sans-serif"
               letterSpacing="0.07em"
-              style={{ fill: isH ? color : 'var(--text-primary)' }}>
+              fill={isH ? color : clrPrimary}>
               {node.label}
             </text>
 
@@ -815,7 +820,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
               textAnchor="middle"
               fontSize="8"
               fontFamily="Barlow Condensed, sans-serif"
-              style={{ fill: 'var(--text-muted)' }}>
+              fill={clrMuted}>
               {node.sub}
             </text>
 
@@ -824,7 +829,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
               <text x={node.x} y={PY + 32}
                 textAnchor="middle"
                 fontSize="8.5" fontFamily="IBM Plex Mono, monospace"
-                style={{ fill: hasFault ? '#ff3b30' : 'var(--text-secondary)' }}>
+                fill={hasFault ? '#ff3b30' : clrSecondary}>
                 {flowLabel}
               </text>
             )}
@@ -833,7 +838,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
                 textAnchor="middle"
                 fontSize="6.5" fontFamily="Barlow Condensed, sans-serif"
                 letterSpacing="0.04em"
-                style={{ fill: 'var(--text-muted)' }}>
+                fill={clrMuted}>
                 bbl/h
               </text>
             )}
@@ -881,7 +886,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
             <text x={node.x} y={TY + 10}
               textAnchor="middle"
               fontSize="8" fontFamily="IBM Plex Mono, monospace"
-              style={{ fill: isH ? color : 'var(--text-secondary)' }}>
+              fill={isH ? color : clrSecondary}>
               {pct.toFixed(0)}%
             </text>
 
@@ -891,7 +896,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
               fontSize="9" fontWeight="700"
               fontFamily="Barlow Condensed, sans-serif"
               letterSpacing="0.05em"
-              style={{ fill: isH ? color : 'var(--text-primary)' }}>
+              fill={isH ? color : clrPrimary}>
               {node.label}
             </text>
 
@@ -899,7 +904,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
             <text x={node.x} y={TY + H/2 + 24}
               textAnchor="middle"
               fontSize="7.5" fontFamily="Barlow Condensed, sans-serif"
-              style={{ fill: 'var(--text-muted)' }}>
+              fill={clrMuted}>
               {node.sub}
             </text>
           </g>
@@ -912,7 +917,7 @@ function PipelineSchematic({ pumps, tanks, alarms, onSelect }) {
           <circle r={4} fill={color}/>
           <text x={9} y={4.5} fontSize="8"
             fontFamily="Barlow Condensed, sans-serif"
-            style={{ fill: 'var(--text-muted)' }}>
+            fill={clrMuted}>
             {label}
           </text>
         </g>
