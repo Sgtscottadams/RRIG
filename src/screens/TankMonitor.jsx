@@ -164,14 +164,20 @@ function TankDetailModal({ tank, onClose }) {
 function matchesTank(tank, filters, searchQuery) {
   const q = searchQuery.toLowerCase()
   if (q && ![tank.name, tank.tag, tank.facilityName, tank.type].some(v => v.toLowerCase().includes(q))) return false
-  for (const f of filters) {
-    if (f.type === 'type' && tank.type !== f.value) return false
-    if (f.type === 'facility' && tank.facility !== f.value) return false
-    if (f.type === 'severity') {
-      if (f.value === 'WARNING' && tank.alarm !== 'WARNING') return false
-      if (f.value === 'CRITICAL' && tank.alarm !== 'ALARM') return false
-      if (f.value === 'NORMAL' && tank.alarm !== 'NORMAL') return false
-    }
+
+  // OR within same filter type, AND across different types
+  const byType = filters.reduce((acc, f) => {
+    if (!acc[f.type]) acc[f.type] = []
+    acc[f.type].push(f.value)
+    return acc
+  }, {})
+
+  if (byType.type && !byType.type.includes(tank.type)) return false
+  if (byType.facility && !byType.facility.includes(tank.facility)) return false
+  if (byType.severity) {
+    const sevMap = { CRITICAL: ['ALARM'], WARNING: ['WARNING'], NORMAL: ['NORMAL'] }
+    const allowed = byType.severity.flatMap(s => sevMap[s] || [])
+    if (!allowed.includes(tank.alarm)) return false
   }
   return true
 }

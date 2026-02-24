@@ -142,17 +142,22 @@ function matchesAlarm(alarm, filters, searchQuery) {
   if (q && ![alarm.name, alarm.tag, alarm.facilityName, alarm.category, alarm.id, alarm.tagPath]
     .some(v => v.toLowerCase().includes(q))) return false
 
-  for (const f of filters) {
-    if (f.type === 'severity' && alarm.severity !== f.value) return false
-    if (f.type === 'alarmStatus' && alarm.status !== f.value) return false
-    if (f.type === 'category' && alarm.category !== f.value) return false
-    if (f.type === 'facility' && alarm.facility !== f.value) return false
-    if (f.type === 'type' && alarm.type !== f.value) return false
-  }
+  // OR within same filter type, AND across different types
+  const byType = filters.reduce((acc, f) => {
+    if (!acc[f.type]) acc[f.type] = []
+    acc[f.type].push(f.value)
+    return acc
+  }, {})
+
+  if (byType.severity    && !byType.severity.includes(alarm.severity))    return false
+  if (byType.alarmStatus && !byType.alarmStatus.includes(alarm.status))   return false
+  if (byType.category    && !byType.category.includes(alarm.category))    return false
+  if (byType.facility    && !byType.facility.includes(alarm.facility))    return false
+  if (byType.type        && !byType.type.includes(alarm.type))            return false
   return true
 }
 
-export default function AlarmSummary({ alarms, filters, searchQuery, addFilter, onAck }) {
+export default function AlarmSummary({ alarms, filters, searchQuery, addFilter, clearFilters, onAck }) {
   const [selected, setSelected] = useState(null)
 
   const filtered = useMemo(() =>
@@ -176,11 +181,11 @@ export default function AlarmSummary({ alarms, filters, searchQuery, addFilter, 
           { label: `${counts.unacked} Unacknowledged`, type: 'alarmStatus', value: 'UNACKNOWLEDGED', cls: 'btn-alarm-active' },
           { label: `${counts.critical} Critical`, type: 'severity', value: 'CRITICAL', cls: 'btn-alarm-active' },
           { label: `${counts.warning} Warning`, type: 'severity', value: 'WARNING', cls: 'btn-warning-active' },
-          { label: 'All Alarms' },
+          { label: 'All Alarms', clear: true },
         ].map(b => (
           <button key={b.label}
             className={`btn ${filters.some(f => f.type === b.type && f.value === b.value) ? (b.cls || 'btn-active') : ''}`}
-            onClick={() => b.type && addFilter({ type: b.type, value: b.value, label: b.label })}>
+            onClick={() => b.clear ? clearFilters() : addFilter({ type: b.type, value: b.value, label: b.label })}>
             {b.label}
           </button>
         ))}

@@ -1,4 +1,16 @@
 import React, { useState, useMemo } from 'react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { TREND_DATA } from '../data/mockData'
+
+// Facility → trend data key + color
+const PUMP_TREND = {
+  'AZL-PS1': { key: 'azulPS1',    color: '#5ac8fa' },
+  'AZL-PS2': { key: 'azulPS2',    color: '#32d74b' },
+  'NM-PS3':  { key: 'northMesa',  color: '#ffd60a' },
+  'CR-PS4':  { key: 'cedarRidge', color: '#ff9f0a' },
+}
+
+const RANGE_POINTS = { '8H': 9, '12H': 13, '24H': 25 }
 
 function ValueCell({ label, value, unit }) {
   return (
@@ -75,31 +87,42 @@ function PumpCard({ pump, onSelect }) {
 }
 
 function PumpDetailModal({ pump, onClose }) {
+  const [tab, setTab] = useState('info')
+  const [range, setRange] = useState('24H')
   if (!pump) return null
 
+  const trendCfg = PUMP_TREND[pump.facility]
+  const pts = RANGE_POINTS[range]
+  const trendSlice = TREND_DATA.slice(TREND_DATA.length - pts)
+
+  const vals = trendCfg ? trendSlice.map(d => d[trendCfg.key]).filter(Boolean) : []
+  const avg    = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+  const maxVal = vals.length ? Math.max(...vals) : null
+  const minVal = vals.length ? Math.min(...vals) : null
+
   const rows = [
-    { label: 'Tag Path', value: pump.tag },
-    { label: 'Facility', value: pump.facilityName },
-    { label: 'Type', value: pump.type },
-    { label: 'Status', value: pump.status },
-    { label: 'Flow Rate', value: `${pump.flow.toLocaleString()} ${pump.flowUnit}` },
-    { label: 'Suction Pressure', value: `${pump.pressure_in} ${pump.pressureUnit}` },
+    { label: 'Tag Path',           value: pump.tag },
+    { label: 'Facility',           value: pump.facilityName },
+    { label: 'Type',               value: pump.type },
+    { label: 'Status',             value: pump.status },
+    { label: 'Flow Rate',          value: `${pump.flow.toLocaleString()} ${pump.flowUnit}` },
+    { label: 'Suction Pressure',   value: `${pump.pressure_in} ${pump.pressureUnit}` },
     { label: 'Discharge Pressure', value: `${pump.pressure_out} ${pump.pressureUnit}` },
-    { label: 'Speed', value: `${pump.speed} ${pump.speedUnit}` },
-    { label: 'Power Draw', value: `${pump.power} ${pump.powerUnit}` },
-    { label: 'Vibration', value: `${pump.vibration} in/s` },
-    { label: 'Motor Temp', value: `${pump.temp} °F` },
-    { label: 'Total Runtime', value: pump.runtime },
-    { label: 'Operation Count', value: pump.ops },
-    { label: 'Last Operation', value: pump.lastOp },
+    { label: 'Speed',              value: `${pump.speed} ${pump.speedUnit}` },
+    { label: 'Power Draw',         value: `${pump.power} ${pump.powerUnit}` },
+    { label: 'Vibration',          value: `${pump.vibration} in/s` },
+    { label: 'Motor Temp',         value: `${pump.temp} °F` },
+    { label: 'Total Runtime',      value: pump.runtime },
+    { label: 'Operation Count',    value: pump.ops },
+    { label: 'Last Operation',     value: pump.lastOp },
   ]
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box fade-in" onClick={e => e.stopPropagation()}
-        style={{ padding: 0 }}>
+        style={{ padding: 0, maxWidth: 620 }}>
 
-        {/* Modal header */}
+        {/* Header */}
         <div style={{
           padding: '14px 18px',
           borderBottom: '1px solid var(--glass-border)',
@@ -115,40 +138,135 @@ function PumpDetailModal({ pump, onClose }) {
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pump.tag}</div>
           </div>
-          <button onClick={onClose} style={{
-            background: 'var(--bg-card)', border: '1px solid var(--glass-border)',
-            borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: 'var(--text-secondary)',
-          }}>✕</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className={`status-badge badge-${pump.status.toLowerCase()}`}>{pump.status}</span>
+            <button onClick={onClose} style={{
+              background: 'var(--bg-card)', border: '1px solid var(--glass-border)',
+              borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: 'var(--text-secondary)',
+            }}>✕</button>
+          </div>
         </div>
 
-        {/* Values */}
-        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {pump.alarm !== 'NORMAL' && (
-            <div style={{
-              background: pump.alarm === 'WARNING' ? 'rgba(255,214,10,0.08)' : 'rgba(255,59,48,0.08)',
-              border: `1px solid ${pump.alarm === 'WARNING' ? 'rgba(255,214,10,0.3)' : 'rgba(255,59,48,0.3)'}`,
-              borderRadius: 8, padding: '8px 12px', marginBottom: 6,
-              color: pump.alarm === 'WARNING' ? 'var(--status-warning)' : 'var(--status-alarm)',
-              fontSize: 12, fontWeight: 500,
+        {/* Tab bar */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--glass-border)', padding: '0 18px' }}>
+          {[['info', 'Info'], ['trend', 'Flow Trend']].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '9px 16px', marginBottom: -1,
+              fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700,
+              fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: tab === id ? 'var(--accent-blue)' : 'var(--text-muted)',
+              borderBottom: tab === id ? '2px solid var(--accent-blue)' : '2px solid transparent',
             }}>
-              ⚠ {pump.alarmMsg}
-            </div>
-          )}
-          {rows.map(({ label, value }) => (
-            <div key={label} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '4px 0',
-              borderBottom: '1px solid var(--glass-border)',
-            }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                {label}
-              </span>
-              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: 'var(--text-value)' }}>
-                {value}
-              </span>
-            </div>
+              {label}
+            </button>
           ))}
         </div>
+
+        {/* INFO tab */}
+        {tab === 'info' && (
+          <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '60vh', overflowY: 'auto' }}>
+            {pump.alarm !== 'NORMAL' && (
+              <div style={{
+                background: pump.alarm === 'WARNING' ? 'rgba(255,214,10,0.08)' : 'rgba(255,59,48,0.08)',
+                border: `1px solid ${pump.alarm === 'WARNING' ? 'rgba(255,214,10,0.3)' : 'rgba(255,59,48,0.3)'}`,
+                borderRadius: 8, padding: '8px 12px', marginBottom: 6,
+                color: pump.alarm === 'WARNING' ? 'var(--status-warning)' : 'var(--status-alarm)',
+                fontSize: 12, fontWeight: 500,
+              }}>
+                ⚠ {pump.alarmMsg}
+              </div>
+            )}
+            {rows.map(({ label, value }) => (
+              <div key={label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '4px 0', borderBottom: '1px solid var(--glass-border)',
+              }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  {label}
+                </span>
+                <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: 'var(--text-value)' }}>
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TREND tab */}
+        {tab === 'trend' && (
+          <div style={{ padding: '14px 18px' }}>
+            {!trendCfg ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 40, fontFamily: 'Barlow Condensed, sans-serif', fontSize: 15 }}>
+                No historical trend data available for this equipment
+              </div>
+            ) : (
+              <>
+                {/* Time range selector */}
+                <div style={{ display: 'flex', gap: 4, marginBottom: 14, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 4 }}>
+                    Range
+                  </span>
+                  {Object.keys(RANGE_POINTS).map(r => (
+                    <button key={r} onClick={() => setRange(r)}
+                      className={`btn ${range === r ? 'btn-active' : ''}`}
+                      style={{ padding: '3px 10px', fontSize: 11 }}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Chart */}
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={trendSlice} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="hour"
+                      tick={{ fontSize: 10, fill: 'var(--text-muted)', fontFamily: 'IBM Plex Mono' }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: 'var(--text-muted)', fontFamily: 'IBM Plex Mono' }}
+                      tickFormatter={v => `${(v/1000).toFixed(1)}k`}
+                    />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--bg-mid)', border: '1px solid var(--border-strong)', borderRadius: 6, fontSize: 12 }}
+                      labelStyle={{ color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', marginBottom: 4 }}
+                      itemStyle={{ color: trendCfg.color }}
+                      formatter={v => [`${v.toLocaleString()} bbl/d`, 'Flow Rate']}
+                    />
+                    <Line
+                      type="monotone" dataKey={trendCfg.key}
+                      stroke={trendCfg.color} strokeWidth={2}
+                      dot={false} activeDot={{ r: 4, fill: trendCfg.color }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+
+                {/* Stats row */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  {[
+                    { label: 'Avg', value: avg },
+                    { label: 'Max', value: maxVal },
+                    { label: 'Min', value: minVal },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{
+                      flex: 1, background: 'rgba(0,0,0,0.25)', borderRadius: 6,
+                      padding: '8px 10px', textAlign: 'center',
+                      border: '1px solid var(--border)',
+                    }}>
+                      <div className="value-label">{label}</div>
+                      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 16, color: trendCfg.color }}>
+                        {value?.toLocaleString() ?? '—'}
+                      </span>
+                      <span className="value-unit"> bbl/d</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <div style={{ padding: '10px 18px', borderTop: '1px solid var(--glass-border)', textAlign: 'center', fontSize: 10, color: 'var(--text-muted)' }}>
           Click outside or ✕ to close · Read-only demo mode
@@ -162,21 +280,25 @@ function matches(pump, filters, searchQuery) {
   const q = searchQuery.toLowerCase()
   if (q && ![pump.name, pump.tag, pump.facilityName, pump.type].some(v => v.toLowerCase().includes(q))) return false
 
-  for (const f of filters) {
-    if (f.type === 'status' && pump.status !== f.value) return false
-    if (f.type === 'type' && pump.type !== f.value) return false
-    if (f.type === 'facility' && pump.facility !== f.value) return false
-    if (f.type === 'severity') {
-      const sev = f.value
-      if (sev === 'CRITICAL' && pump.alarm !== 'ALARM' && pump.alarm !== 'FAULT') return false
-      if (sev === 'WARNING' && pump.alarm !== 'WARNING') return false
-      if (sev === 'NORMAL' && pump.alarm !== 'NORMAL') return false
-    }
+  // OR within same filter type, AND across different types
+  const byType = filters.reduce((acc, f) => {
+    if (!acc[f.type]) acc[f.type] = []
+    acc[f.type].push(f.value)
+    return acc
+  }, {})
+
+  if (byType.status && !byType.status.includes(pump.status)) return false
+  if (byType.type && !byType.type.includes(pump.type)) return false
+  if (byType.facility && !byType.facility.includes(pump.facility)) return false
+  if (byType.severity) {
+    const sevMap = { CRITICAL: ['ALARM', 'FAULT'], WARNING: ['WARNING'], NORMAL: ['NORMAL'] }
+    const allowed = byType.severity.flatMap(s => sevMap[s] || [])
+    if (!allowed.includes(pump.alarm)) return false
   }
   return true
 }
 
-export default function PumpStations({ pumps, filters, searchQuery, addFilter }) {
+export default function PumpStations({ pumps, filters, searchQuery, addFilter, clearFilters }) {
   const [selected, setSelected] = useState(null)
 
   const filtered = useMemo(() =>
@@ -208,7 +330,7 @@ export default function PumpStations({ pumps, filters, searchQuery, addFilter })
           <button key={b.label}
             className={`btn ${filters.some(f => f.type === b.type && f.value === b.value) ? (b.cls || 'btn-active') : ''}`}
             onClick={() => {
-              if (b.clear) { /* handled by clear in sidebar */ }
+              if (b.clear) clearFilters()
               else addFilter({ type: b.type, value: b.value, label: b.label })
             }}>
             {b.label}
